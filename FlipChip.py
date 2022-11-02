@@ -7,6 +7,12 @@
 # Author             : A.S.Harrison
 # Amendment History  : Date         Author          Description
 #                      25Oct2022    A.S.Harrison    Created
+#                      02Nov2022    A.S.Harrison    Fixed a bug whereby play stopped when the 
+#                 '                                 computer made a move and there was no move
+#                                                   available to the player (see the click event).
+#                      02Nov2022    A.S.Harrison    The PlaySequence list was one entry too short,
+#                                                   this meant that play would be ended if the last 
+#                                                   available square was the extreme bottom right.
 #--------------------------------------------------------------------------------------------------
 
 import sys                                                              # Used when exitting the code
@@ -39,7 +45,7 @@ Grid = [0] * CELLS                                                      # This r
                                                                         # A value of -1 represents a black chip and
                                                                         # A value of +1 represents a white chip
 
-PlaySequence = random.sample(list(range(0, CELLS-1, 1)), CELLS-1)       # This is used when the computer is selecting the next move
+PlaySequence = random.sample(list(range(0, CELLS, 1)), CELLS)           # This is used when the computer is selecting the next move
 
 
 # This class looks after everything. Go to the end of the code to see where
@@ -78,9 +84,12 @@ class FlipChip():
             if me.move_points(+1, intCell) > 0:                         # If it will result in some of the opponents chips being turned over
                 me.make_move(+1, intCell)                               # Then make the move
                 me.draw_chips()                                         # Redraw the chips
-                me.computer_move()                                      # And let hte computer have a go
-        me.window.update()                                              # Make sure the GUI is up to date
-        if me.finished():                                               # If there are no more valid moves
+                while 1:                                                # Now start a loop (this is used when the computer has a go and then the human has no available moves)
+                    me.computer_move()                                  # And let the computer have a go
+                    me.window.update()                                  # Make sure the GUI is up to date
+                    if me.best_move(+1) != -1: break                    # If the human has some moves available, quit the loop
+                    if me.finished(): break                             # If the game is finished, quit the loop
+        if me.finished():                                               # If there are no more valid moves for either player
             me.finish()                                                 # Display the results and ask if the user wants another game
 
 
@@ -115,7 +124,7 @@ class FlipChip():
             me.make_move(-1, intBestCell)                               # Make the move
             me.draw_chips()                                             # Redraw the chips
         me.window.update()                                              # Make sure the GUI is up to date
-        if me.finished():                                               # If there are no more valid moves
+        if me.finished():                                               # If there are no more valid moves for either player
             me.finish()                                                 # Display the results and ask if the user wants another game
 
 
@@ -303,7 +312,7 @@ class FlipChip():
 
 
     # Reset the grid to starting positions---------------------------------------------------------
-    def reset(me):                                                    
+    def reset(me): 
         for i in range(0, CELLS):Grid[i] = 0                            # Remove all chips (from previous game)
         Grid[int(CELLS / 2 - COLUMNS / 2)] = -1                         # Set up the starting chips in the centre of the board
         Grid[int(CELLS / 2 - COLUMNS / 2 - 1)] = +1
