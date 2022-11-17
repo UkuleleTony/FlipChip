@@ -13,13 +13,30 @@
 #                      02Nov2022    A.S.Harrison    The PlaySequence list was one entry too short,
 #                                                   this meant that play would be ended if the last 
 #                                                   available square was the extreme bottom right.
+#                      17Nov2022    A.S.Harrison    Now using messagebox from tkinter instead of the
+#                                                   Windows MsgBox (so that it works on iOS too)
+#                      17Nov2022    A.S.Harrison    Constants for the chip colours.
+#                      17Nov2022    A.S.Harrison    The range in the best_move method was one too
+#                                                   short to cover all the squares.
+#                      17Nov2022    A.S.Harrison    Now regenerating PlaySequence for each new game
+#                                                   so the computer evaluates moves differently for
+#                                                   each new game.
+#                      17Nov2022    A.S.Harrison    Minor performance enhancement - best_move now
+#                                                   has an additional parameter which is used to 
+#                                                   see if ANY move is available for the specified
+#                                                   colour.
+#                      17Nov2022    A.S.Harrison    Now updating the GUI in the draw_chips method.
+#                      17Nov2022    A.S.Harrison    The line_points method wasn't working properly
+#                                                   for diagonals - it was returning a valid diagonal
+#                                                   when the line wrapped around the vertical edges of
+#                                                   the board.
 #--------------------------------------------------------------------------------------------------
 
 import sys                                                              # Used when exitting the code
 import time                                                             # Used when pausing to show the player what the computer's move is going to be
 import random                                                           # For generating random numbers (used when deciding what the computer's next move is)
 from tkinter import *                                                   # For GUI functionality
-import ctypes                                                           # To get at the MsgBox
+from tkinter import messagebox                                          # To get at the MsgBox (at the end of a game)
 
 # Define all the constants-------------------------------------------------------------------------
 SIZE_OF_BOARD = int(400)                                                # 400 pixel board size
@@ -37,8 +54,9 @@ SOUTH_EAST = int(COLUMNS + 1)
 SOUTH_WEST = int(COLUMNS - 1)
 NORTH_WEST = int(-(COLUMNS + 1))
 
-MSG_BOX_YES = int(6)                                                    # Return value from MsgBox when 'Yes' is clicked
-MSG_BOX_NO = int(7)                                                     # Return value from MsgBox when 'No' is clicked
+NO_CHIP = int(0)                                                        # This represents an empty square
+BLACK_CHIP = int(-1)                                                    # This represents a black chip
+WHITE_CHIP = int(+1)                                                    # This represents a white chip
 
 # Globals------------------------------------------------------------------------------------------
 Grid = [0] * CELLS                                                      # This represents the playing grid
@@ -46,6 +64,8 @@ Grid = [0] * CELLS                                                      # This r
                                                                         # A value of +1 represents a white chip
 
 PlaySequence = random.sample(list(range(0, CELLS, 1)), CELLS)           # This is used when the computer is selecting the next move
+                                                                        # It's to ensure that the computer evaluates moves in
+                                                                        # a different order for every game
 
 
 # This class looks after everything. Go to the end of the code to see where
@@ -80,14 +100,13 @@ class FlipChip():
         intRow = int(((event.y / CELL_SIZE)))                           # Calculate which row was clicked
         intCol = int(((event.x / CELL_SIZE)))                           # Calculate which column was clicked
         intCell = me.cell_from_coords(intRow, intCol)                   # Which grid cell is it?
-        if Grid[intCell] == 0:                                          # If the cell doesn't have a chip in it
+        if Grid[intCell] == NO_CHIP:                                    # If the cell doesn't have a chip in it
             if me.move_points(+1, intCell) > 0:                         # If it will result in some of the opponents chips being turned over
-                me.make_move(+1, intCell)                               # Then make the move
+                me.make_move(WHITE_CHIP, intCell)                       # Then make the player's move
                 me.draw_chips()                                         # Redraw the chips
-                while 1:                                                # Now start a loop (this is used when the computer has a go and then the human has no available moves)
+                while True:                                             # Now start a loop (this is used when the computer has a go and then the human has no available moves)
                     me.computer_move()                                  # And let the computer have a go
-                    me.window.update()                                  # Make sure the GUI is up to date
-                    if me.best_move(+1) != -1: break                    # If the human has some moves available, quit the loop
+                    if me.best_move(WHITE_CHIP, True) != -1: break      # If the human has any move available, quit the loop
                     if me.finished(): break                             # If the game is finished, quit the loop
         if me.finished():                                               # If there are no more valid moves for either player
             me.finish()                                                 # Display the results and ask if the user wants another game
@@ -95,8 +114,8 @@ class FlipChip():
 
     # Finish the current game----------------------------------------------------------------------
     def finish(me):                                                   
-        intScoreWhite = int(me.score(+1))                               # Count the white tiles
-        intScoreBlack = int(me.score(-1))                               # Count the black tiles
+        intScoreWhite = int(me.score(WHITE_CHIP))                       # Count the white tiles
+        intScoreBlack = int(me.score(BLACK_CHIP))                       # Count the black tiles
         strMsg = str("")                                                # Initialise the display string
         
         if intScoreWhite == intScoreBlack: strMsg = "It's a tie!\r\n"   # Build the display string
@@ -105,31 +124,26 @@ class FlipChip():
         strMsg = strMsg + "\r\nThere are no available moves left for either player\r\n" 
         strMsg = strMsg + "\r\nBlack has " + str(intScoreBlack) + " chips and White has " + str(intScoreWhite) + " chips\r\n" 
         strMsg = strMsg + "\r\nDo you want to play again?"
-        if me.MsgBox ("FlipChip", strMsg, 4) == MSG_BOX_YES:            # Ask the user if s/he wants to go again
+
+        if messagebox.askquestion("FlipChip", strMsg) == "yes":         # Ask the user if s/he wants to go again
             me.reset()                                                  # S/he does, so reset the board
             me.draw_chips()                                             # aAnd redraw the (starting) chips
         else:                                                           # Otherwise the player has had enough
             sys.exit()                                                  # So quit
 
 
-    # Just calls the windows message box function--------------------------------------------------
-    def MsgBox(me,title, text, style):                                
-        return ctypes.windll.user32.MessageBoxW(0, text, title, style)  # Return whatever the message box returned
-
-
     # Play the computer's move---------------------------------------------------------------------
     def computer_move(me): 
-        intBestCell = me.best_move(-1)                                  # Find the 'best' move for black
+        intBestCell = me.best_move(BLACK_CHIP, False)                   # Find the 'best' move for black
         if intBestCell != -1:                                           # As long as we found a valid move
-            me.make_move(-1, intBestCell)                               # Make the move
+            me.make_move(BLACK_CHIP, intBestCell)                       # Make the move
             me.draw_chips()                                             # Redraw the chips
-        me.window.update()                                              # Make sure the GUI is up to date
         if me.finished():                                               # If there are no more valid moves for either player
             me.finish()                                                 # Display the results and ask if the user wants another game
 
 
     # Work out the best move for a colour----------------------------------------------------------
-    def best_move(me, intColor: int):
+    def best_move(me, intColor: int, blnAnyMove: bool):
         i = int(0)                                                      # For looping through the cells
         intCell = int(0)                                                # The cell currently being tested
         intBestCell = int(-1)                                           # The cell that results in the best move (-1 means there are no moves available)
@@ -138,7 +152,7 @@ class FlipChip():
         intRow = int(0)                                                 # The row of the cell being tested
         intCol = int(0)                                                 # The column of the cell being tested
 
-        for i in range(0, CELLS-1):                                     # For each cell in the grid
+        for i in range(0, CELLS):                                       # For each cell in the grid
             intCell = PlaySequence[i]                                   # This just randomises the order in which the computer evaluates the available moves
             if Grid[intCell] == 0:                                      # If this is an empty cell
                 intFlips = me.move_points(intColor, intCell)            # See how many chips would be flipped if we played this cell
@@ -153,6 +167,7 @@ class FlipChip():
                 if intFlips > intBestFlips:                             # If this is the best move we have found so far
                     intBestCell = intCell                               # Remember its cell location
                     intBestFlips = intFlips                             # And remember its weighting
+                    if blnAnyMove == True: break                        # If we're just looking if ANY move is available then we can quit the loop
 
         return intBestCell                                              # Return the cell with the best move
 
@@ -162,16 +177,16 @@ class FlipChip():
         intRes = int(0)                                                 # Initialise the result
 
         # Straight lines
-        intRes = intRes + me.line_points(intColor,intCell, NORTH)       # Add in the points gained from a line going UP from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, SOUTH)       # Add in the points gained from a line going DOWN from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, EAST)        # Add in the points gained from a line going RIGHT from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, WEST)        # Add in the points gained from a line going LEFT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, NORTH)      # Add in the points gained from a line going UP from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, SOUTH)      # Add in the points gained from a line going DOWN from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, EAST)       # Add in the points gained from a line going RIGHT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, WEST)       # Add in the points gained from a line going LEFT from the cell being tested
 
         # Diagonal lines
-        intRes = intRes + me.line_points(intColor,intCell, NORTH_EAST)  # Add in the points gained from a line going UP & RIGHT from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, SOUTH_EAST)  # Add in the points gained from a line going DOWN & RIGHT from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, SOUTH_WEST)  # Add in the points gained from a line going DOWN & LEFT from the cell being tested
-        intRes = intRes + me.line_points(intColor,intCell, NORTH_WEST)  # Add in the points gained from a line going UP & LEFT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, NORTH_EAST) # Add in the points gained from a line going UP & RIGHT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, SOUTH_EAST) # Add in the points gained from a line going DOWN & RIGHT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, SOUTH_WEST) # Add in the points gained from a line going DOWN & LEFT from the cell being tested
+        intRes = intRes + me.line_points(intColor, intCell, NORTH_WEST) # Add in the points gained from a line going UP & LEFT from the cell being tested
 
         return intRes                                                   # Return the total number of chips that would be flipped
 
@@ -197,10 +212,10 @@ class FlipChip():
                 if intRowNow != intRowThen: return 0                    # We have to stay on the same row
 
             if intDirection == NORTH_WEST or intDirection == SOUTH_WEST:    # For diagonally LEFT directions
-                if intColNow > intColThen: return 0                     # We can't have moved to a higher column
+                if intColNow >= intColThen: return 0                    # We can't have moved to a higher column or be on the same column
 
             if intDirection == NORTH_EAST or intDirection == SOUTH_EAST:    # For diagonally RIGHT directions
-                if intColNow < intColThen: return 0                     # We can't have moved to a lower column
+                if intColNow <= intColThen: return 0                    # We can't have moved to a lower column or be on the same column
 
             if Grid[intWorkingCell] == 0: return 0                      # If there's no chip in this cell then it's not a valid move
 
@@ -282,17 +297,18 @@ class FlipChip():
     
     # Draw all the chips that have been played so far----------------------------------------------
     def draw_chips(me):                                               
-        for i in range(0, ROWS ):                                       # For each row
-            for j in range(0, COLUMNS ):                                # For each column
+        for i in range(0, ROWS):                                        # For each row
+            for j in range(0, COLUMNS):                                 # For each column
                 me.draw_chip(i,j)                                       # Draw the chip
+        me.window.update()                                              # Make sure the GUI is up to date
 
 
     # Draw an individual chip----------------------------------------------------------------------
     def draw_chip(me, intRow: int, intCol: int):                                
         intCell = int(me.cell_from_coords(intRow,intCol))               # Calculate which cell we are drawing
         chip_color = 'green'                                            # Default to green (i.e. no chip present)
-        if Grid[intCell] == -1: chip_color = 'black'                    # -1 indicates a black chip
-        if Grid[intCell] == +1: chip_color = 'white'                    # +1 indicates a white chip
+        if Grid[intCell] == BLACK_CHIP: chip_color = 'black'            # -1 indicates a black chip
+        if Grid[intCell] == WHITE_CHIP: chip_color = 'white'            # +1 indicates a white chip
         me.canvas.create_oval(intCol*CELL_SIZE+4,intRow*CELL_SIZE+4,(intCol+1)*CELL_SIZE-4,(intRow+1)*CELL_SIZE-4,outline=chip_color,fill=chip_color)
 
 
@@ -313,17 +329,19 @@ class FlipChip():
 
     # Reset the grid to starting positions---------------------------------------------------------
     def reset(me): 
-        for i in range(0, CELLS):Grid[i] = 0                            # Remove all chips (from previous game)
-        Grid[int(CELLS / 2 - COLUMNS / 2)] = -1                         # Set up the starting chips in the centre of the board
-        Grid[int(CELLS / 2 - COLUMNS / 2 - 1)] = +1
-        Grid[int(CELLS / 2 + COLUMNS / 2)] = +1
-        Grid[int(CELLS / 2 + COLUMNS / 2 - 1)] = -1
+        for i in range(0, CELLS):Grid[i] = NO_CHIP                      # Remove all chips (from previous game)
+        Grid[int(CELLS / 2 - COLUMNS / 2)] = BLACK_CHIP                 # Set up the starting chips in the centre of the board
+        Grid[int(CELLS / 2 - COLUMNS / 2 - 1)] = WHITE_CHIP
+        Grid[int(CELLS / 2 + COLUMNS / 2)] = WHITE_CHIP
+        Grid[int(CELLS / 2 + COLUMNS / 2 - 1)] = BLACK_CHIP
+        PlaySequence = random.sample(list(range(0, CELLS, 1)), CELLS)   # Regenerate the computer's playing order (i.e. the order in which the computer evaluates moves)
 
 
     # Is the game over?----------------------------------------------------------------------------
     def finished(me):
-        if me.best_move(+1) == -1 and me.best_move(-1) == -1:           # If there are no valid moves for either player
-            return True                                                 # Then the game is over
+        if me.best_move(WHITE_CHIP, True) != -1: return False           # If there's a white move available then we've not finished
+        if me.best_move(BLACK_CHIP, True) != -1: return False           # If there's a black move available then we've not finished
+        return True                                                     # Otherwise the game is over
 
 
 
